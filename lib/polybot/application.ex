@@ -12,9 +12,7 @@ defmodule Polybot.Application do
       Polybot.Repo,
       {DNSCluster, query: Application.get_env(:polybot, :dns_cluster_query) || :ignore},
       {Phoenix.PubSub, name: Polybot.PubSub},
-      # Start a worker by calling: Polybot.Worker.start_link(arg)
-      # {Polybot.Worker, arg},
-      # Start to serve requests, typically the last entry
+      Polybot.Scheduler,
       PolybotWeb.Endpoint
     ]
 
