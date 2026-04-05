@@ -44,27 +44,39 @@ defmodule Polybot.Trading.PaperTrader do
   end
 
   def open_position(decision) do
-    position_size = @capital * @max_position_pct
-    entry_price = decision.market_price
-    shares = position_size / entry_price
+    import Ecto.Query
 
-    %Position{}
-    |> Position.changeset(%{
-      market_id: decision.market_id,
-      question: decision.question,
-      action: decision.action,
-      entry_price: entry_price,
-      shares: shares,
-      cost: position_size,
-      status: "open",
-      paper: true
-    })
-    |> Repo.insert()
-    |> case do
-      {:ok, p} ->
-        Logger.info("📝 Paper position opened: #{p.action} #{p.market_id} @ #{p.entry_price}, cost: $#{p.cost}")
-      {:error, changeset} ->
-        Logger.error("Failed to open position: #{inspect(changeset.errors)}")
+    # Check if position already open for this market
+    already_open = Repo.exists?(
+      from p in Position,
+      where: p.market_id == ^decision.market_id and p.status == "open"
+    )
+
+    if already_open do
+      Logger.debug("Position already open for #{decision.market_id}, skipping")
+    else
+      position_size = @capital * @max_position_pct
+      entry_price = decision.market_price
+      shares = position_size / entry_price
+
+      %Position{}
+      |> Position.changeset(%{
+        market_id: decision.market_id,
+        question: decision.question,
+        action: decision.action,
+        entry_price: entry_price,
+        shares: shares,
+        cost: position_size,
+        status: "open",
+        paper: true
+      })
+      |> Repo.insert()
+      |> case do
+        {:ok, p} ->
+          Logger.info("📝 Paper position opened: #{p.action} #{p.market_id} @ #{p.entry_price}, cost: $#{p.cost}")
+        {:error, changeset} ->
+          Logger.error("Failed to open position: #{inspect(changeset.errors)}")
+      end
     end
   end
 
