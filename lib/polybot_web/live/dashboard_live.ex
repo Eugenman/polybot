@@ -57,7 +57,7 @@ defmodule PolybotWeb.DashboardLive do
         </div>
         <div class="bg-base-200 rounded-lg p-4">
           <div class="text-sm opacity-70">Capital Deployed</div>
-          <div class="text-3xl font-bold">$<%= Float.round(@stats.total_cost, 2) %></div>
+          <div class="text-3xl font-bold">$<%= :erlang.float_to_binary(@stats.total_cost, [decimals: 0]) %></div>
         </div>
       </div>
 
