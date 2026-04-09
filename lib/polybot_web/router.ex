@@ -17,6 +17,7 @@ defmodule PolybotWeb.Router do
   scope "/", PolybotWeb do
     pipe_through :browser
 
+    live "/dashboard", DashboardLive
     get "/", PageController, :home
   end
 
