@@ -49,9 +49,9 @@ defmodule Polybot.Scheduler do
   # Private
 
   defp scan_markets do
-    case Polybot.Polymarket.Gamma.fetch_markets() do
+    case Polybot.Polymarket.Gamma.fetch_political_and_sports_markets() do
       {:ok, markets} ->
-        Logger.info("Fetched #{length(markets)} markets")
+        Logger.info("Fetched #{length(markets)} relevant markets")
         analyze_markets(markets)
 
       {:error, reason} ->
@@ -60,10 +60,12 @@ defmodule Polybot.Scheduler do
     end
   end
 
-  defp analyze_markets(markets) do
+  # scheduler.ex — добавить задержку между запросами
+defp analyze_markets(markets) do
     markets
-    |> Enum.take(10)
+    |> Enum.take(20)
     |> Enum.map(fn market ->
+      Process.sleep(2000)  # 2 секунды между запросами
       case Polybot.AI.Analyst.analyze(market) do
         {:ok, decision} ->
           log_decision(decision)

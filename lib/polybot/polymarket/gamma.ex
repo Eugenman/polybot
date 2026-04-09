@@ -32,6 +32,47 @@ defmodule Polybot.Polymarket.Gamma do
     end
   end
 
+  @political_keywords ["president", "election", "congress", "senate", "minister", 
+                     "trump", "biden", "war", "ceasefire", "nuclear", "nato",
+                     "iran", "russia", "ukraine", "china", "taiwan", "israel",
+                     "fed", "rate", "gdp", "recession", "tariff", "trade"]
+
+  @sports_keywords ["nba", "nfl", "nhl", "fifa", "world cup", "finals", "championship",
+                    "super bowl", "playoff", "tournament", "win the"]
+
+  def fetch_political_and_sports_markets(opts \\ []) do
+    limit = Keyword.get(opts, :limit, 200)
+    min_volume = Keyword.get(opts, :min_volume, 50_000)
+
+    case Req.get("#{@base_url}/markets", params: [
+      active: true,
+      closed: false,
+      limit: limit
+    ]) do
+      {:ok, %{status: 200, body: markets}} when is_list(markets) ->
+        filtered = markets
+          |> Enum.filter(&filter_market(&1, min_volume))
+          |> Enum.filter(&is_relevant_market?/1)
+          |> Enum.map(&parse_market/1)
+        {:ok, filtered}
+
+      {:ok, %{status: status}} ->
+        {:error, "Unexpected status: #{status}"}
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+
+  defp is_relevant_market?(market) do
+    question = String.downcase(market["question"] || "")
+    
+    political = Enum.any?(@political_keywords, &String.contains?(question, &1))
+    sports = Enum.any?(@sports_keywords, &String.contains?(question, &1))
+    
+    political || sports
+  end
+
   defp filter_market(market, min_volume) do
     volume = market["volume"] |> parse_float()
     active = market["active"] == true
