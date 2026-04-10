@@ -32,6 +32,7 @@ defmodule Polybot.Scheduler do
     Logger.info("Starting market scan cycle #{state.cycle + 1}")
 
     decisions = scan_markets()
+    Polybot.Trading.PositionManager.update_positions()
 
     # Schedule next scan
     Process.send_after(self(), :scan, @interval_ms)
@@ -43,6 +44,7 @@ defmodule Polybot.Scheduler do
   def handle_cast(:scan, state) do
     Logger.info("Manual scan triggered")
     decisions = scan_markets()
+    Polybot.Trading.PositionManager.update_positions()
     {:noreply, %{state | decisions: decisions}}
   end
 
@@ -60,12 +62,11 @@ defmodule Polybot.Scheduler do
     end
   end
 
-  # scheduler.ex — добавить задержку между запросами
-defp analyze_markets(markets) do
+  defp analyze_markets(markets) do
     markets
     |> Enum.take(20)
     |> Enum.map(fn market ->
-      Process.sleep(2000)  # 2 секунды между запросами
+      Process.sleep(2000)
       case Polybot.AI.Analyst.analyze(market) do
         {:ok, decision} ->
           log_decision(decision)

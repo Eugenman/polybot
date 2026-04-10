@@ -69,6 +69,8 @@ defmodule PolybotWeb.DashboardLive do
               <th>Market</th>
               <th>Action</th>
               <th>Entry Price</th>
+              <th>Current Price</th>
+              <th>P&L</th>
               <th>Cost</th>
               <th>Opened</th>
             </tr>
@@ -83,6 +85,10 @@ defmodule PolybotWeb.DashboardLive do
                 </span>
               </td>
               <td><%= position.entry_price %></td>
+              <td><%= position.exit_price %></td>
+              <td class={if (position.pnl || 0) >= 0, do: "text-success", else: "text-error"}>
+                $<%= Float.round(position.pnl || 0.0, 2) %>
+              </td>
               <td>$<%= position.cost %></td>
               <td><%= Calendar.strftime(position.inserted_at, "%d %b %H:%M") %></td>
             </tr>

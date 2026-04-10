@@ -32,6 +32,17 @@ defmodule Polybot.Polymarket.Gamma do
     end
   end
 
+  def fetch_market(market_id) do
+    case Req.get("#{@base_url}/markets/#{market_id}") do
+      {:ok, %{status: 200, body: market}} when is_map(market) ->
+        {:ok, parse_market(market)}
+      {:ok, %{status: status}} ->
+        {:error, "Unexpected status: #{status}"}
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+
   @political_keywords ["president", "election", "congress", "senate", "minister", 
                      "trump", "biden", "war", "ceasefire", "nuclear", "nato",
                      "iran", "russia", "ukraine", "china", "taiwan", "israel",
