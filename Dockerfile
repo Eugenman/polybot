@@ -1,11 +1,12 @@
-FROM elixir:1.18.2-otp-27-alpine
+FROM elixir:1.18.2-otp-27
 
-RUN apk add --no-cache \
-  build-base \
+RUN apt-get update && apt-get install -y \
+  build-essential \
   git \
   nodejs \
   npm \
-  postgresql-client
+  postgresql-client \
+  && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
