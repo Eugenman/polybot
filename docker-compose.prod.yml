@@ -1,6 +1,9 @@
 services:
   app:
     build: .
+    dns:
+      - 8.8.8.8
+      - 1.1.1.1
     environment:
       - MIX_ENV=prod
       - DATABASE_URL=ecto://postgres:postgres@db/polybot_prod
