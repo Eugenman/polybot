@@ -15,13 +15,16 @@
 - `PolybotWeb.DashboardLive` — `/dashboard`, open positions and recent decisions
 
 ## Strategy
-Claude estimates the probability of a market outcome; the bot compares it with the market price
-and opens a paper position if the edge is large enough.
+Claude estimates only the probability that a market resolves YES. The bot computes
+`edge = probability - yes_price` itself and opens a paper position if the edge is large enough.
 
 ## Current rules (as implemented)
 - Capital: $1000 (constant), position size: 10% of capital
 - Min edge to enter: 10%
-- Take-profit: +50%, stop-loss: -40% per position
+- `buy_yes` requires edge > 0, `buy_no` requires edge < 0; a contradicting model action becomes `pass`
+- YES positions are bought and tracked at the YES price, NO positions at the NO price
+- Only markets with both prices strictly between 0 and 1 are analyzed
+- Take-profit: +50%, stop-loss: -40% per position (P&L update and close in one UPDATE)
 - One open position per market
 - Max open positions / total exposure: not enforced yet
 

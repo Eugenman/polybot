@@ -108,6 +108,7 @@ defmodule Polybot.Polymarket.Gamma do
           |> Enum.filter(&filter_market(&1, min_volume))
           |> Enum.filter(&is_relevant_market?/1)
           |> Enum.map(&parse_market/1)
+          |> Enum.filter(&tradable?/1)
 
         {:ok, filtered}
 
@@ -118,6 +119,18 @@ defmodule Polybot.Polymarket.Gamma do
         {:error, reason}
     end
   end
+
+  @doc """
+  A market is tradable when both YES and NO prices are known and strictly between 0 and 1.
+  Prices of 0 or 1 mean the market is effectively resolved, and 0 would break P&L math.
+  """
+  def tradable?(%{yes_price: yes, no_price: no}), do: valid_price?(yes) and valid_price?(no)
+
+  defp valid_price?(%Decimal{} = price) do
+    Decimal.compare(price, 0) == :gt and Decimal.compare(price, 1) == :lt
+  end
+
+  defp valid_price?(_), do: false
 
   defp is_relevant_market?(market) do
     question = String.downcase(market["question"] || "")

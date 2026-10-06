@@ -6,22 +6,21 @@ defmodule Polybot.AI.Analyst do
   """
 
   alias Polybot.Decimals
+  alias Polybot.Polymarket.Gamma
 
   @anthropic_url "https://api.anthropic.com/v1/messages"
   @model "claude-haiku-4-5-20251001"
   @deep_analysis_min_edge Decimal.new("0.10")
 
   def analyze(market) do
-    case quick_analysis(market) do
-      {:ok, quick} ->
+    if Gamma.tradable?(market) do
+      with {:ok, quick} <- quick_analysis(market) do
         if promising?(quick.edge), do: deep_analysis(market, quick), else: {:ok, quick}
-
-      {:error, reason} ->
-        {:error, reason}
+      end
+    else
+      {:error, "Market #{market.id} has no tradable prices"}
     end
   end
-
-  defp promising?(nil), do: false
 
   defp promising?(edge) do
     Decimal.compare(Decimal.abs(edge), @deep_analysis_min_edge) != :lt
@@ -85,13 +84,13 @@ defmodule Polybot.AI.Analyst do
     End date: #{market.end_date}
 
     Respond ONLY with valid JSON, no markdown:
-    {"probability": 0.65, "confidence": "medium", "edge": 0.10, "reasoning": "brief", "action": "buy_yes"}
+    {"probability": 0.65, "confidence": "medium", "reasoning": "brief", "action": "buy_yes"}
 
     Rules:
-    - probability: float 0.0-1.0
+    - probability: your estimate that the market resolves YES, float 0.0-1.0
     - confidence: "low", "medium", or "high"
-    - edge: your_probability - market_yes_price
-    - action: "buy_yes", "buy_no", or "pass" (pass if abs(edge) < 0.10 or confidence low)
+    - action: "buy_yes" if probability is well above the YES price, "buy_no" if well below,
+      otherwise "pass" (also pass if confidence is low)
     """
   end
 
@@ -108,7 +107,7 @@ defmodule Polybot.AI.Analyst do
     Search for the latest news about this topic, then provide your final analysis.
 
     Respond ONLY with valid JSON, no markdown:
-    {"probability": 0.65, "confidence": "high", "edge": 0.10, "reasoning": "detailed reasoning with news", "action": "buy_yes"}
+    {"probability": 0.65, "confidence": "high", "reasoning": "detailed reasoning with news", "action": "buy_yes"}
     """
   end
 
@@ -116,8 +115,7 @@ defmodule Polybot.AI.Analyst do
 
   defp parse_response({:ok, response}, market) do
     text =
-      response
-      |> get_in(["content"])
+      (response["content"] || [])
       |> Enum.filter(fn block -> block["type"] == "text" end)
       |> List.last()
       |> case do
@@ -138,33 +136,59 @@ defmodule Polybot.AI.Analyst do
           |> String.trim()
       end
 
-    case Jason.decode(json_text) do
-      {:ok, data} ->
-        action = normalize_action(data["action"])
+    with {:ok, data} when is_map(data) <- Jason.decode(json_text),
+         {:ok, probability} <- validate_probability(data["probability"]) do
+      # The model only estimates the probability; edge is calculated here, not trusted from the LLM.
+      edge = Decimal.sub(probability, market.yes_price)
 
-        reasoning =
-          (data["reasoning"] || "")
-          |> String.replace(~r/<cite[^>]*>/, "")
-          |> String.replace(~r/<\/cite>/, "")
+      reasoning =
+        (data["reasoning"] || "")
+        |> String.replace(~r/<cite[^>]*>/, "")
+        |> String.replace(~r/<\/cite>/, "")
 
-        {:ok,
-         %{
-           market_id: market.id,
-           question: market.question,
-           market_price: market.yes_price,
-           our_probability: Decimals.to_decimal(data["probability"]),
-           confidence: data["confidence"],
-           edge: Decimals.to_decimal(data["edge"]),
-           action: action,
-           reasoning: reasoning
-         }}
+      {:ok,
+       %{
+         market_id: market.id,
+         question: market.question,
+         market_price: market.yes_price,
+         no_price: market.no_price,
+         our_probability: probability,
+         confidence: data["confidence"],
+         edge: edge,
+         action: data["action"] |> normalize_action() |> consistent_with_edge(edge),
+         reasoning: reasoning
+       }}
+    else
+      {:error, :invalid_probability} ->
+        {:error, "Claude returned no valid probability: #{text}"}
 
-      {:error, _} ->
+      _ ->
         {:error, "Failed to parse Claude response: #{text}"}
     end
   end
 
   defp parse_response({:error, reason}, _market), do: {:error, reason}
+
+  defp validate_probability(value) do
+    probability = Decimals.to_decimal(value)
+
+    if probability && Decimal.compare(probability, 0) != :lt &&
+         Decimal.compare(probability, 1) != :gt do
+      {:ok, probability}
+    else
+      {:error, :invalid_probability}
+    end
+  end
+
+  # Buying YES only makes sense when we think YES is underpriced (edge > 0), buying NO when
+  # YES is overpriced (edge < 0). A contradicting action from the model becomes "pass".
+  defp consistent_with_edge("buy_yes", edge),
+    do: if(Decimal.positive?(edge), do: "buy_yes", else: "pass")
+
+  defp consistent_with_edge("buy_no", edge),
+    do: if(Decimal.negative?(edge), do: "buy_no", else: "pass")
+
+  defp consistent_with_edge(action, _edge), do: action
 
   defp normalize_action("buy_yes"), do: "buy_yes"
   defp normalize_action("buy_no"), do: "buy_no"

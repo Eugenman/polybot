@@ -23,23 +23,59 @@ defmodule Polybot.Trading.PositionManager do
 
     Logger.info("Updating #{length(positions)} open positions")
 
-    Enum.each(positions, fn position ->
-      case Gamma.fetch_market(position.market_id) do
-        {:ok, market} ->
-          current_price = get_current_price(market, position.action)
-          pnl_pct = calculate_pnl(position, current_price)
-          update_position_pnl(position, current_price, pnl_pct)
-          maybe_close_position(position, current_price, pnl_pct)
-
-        {:error, reason} ->
-          Logger.error("Failed to fetch market #{position.market_id}: #{inspect(reason)}")
-      end
-    end)
+    Enum.each(positions, &update_position/1)
   end
 
-  defp get_current_price(market, "buy_yes"), do: market.yes_price
-  defp get_current_price(market, "buy_no"), do: market.no_price
-  defp get_current_price(market, _), do: market.yes_price
+  defp update_position(position) do
+    with {:ok, market} <- Gamma.fetch_market(position.market_id),
+         %Decimal{} = current_price <- current_price(market, position.action),
+         true <- Decimal.positive?(position.entry_price) do
+      apply_price(position, current_price)
+    else
+      {:error, reason} ->
+        Logger.error("Failed to fetch market #{position.market_id}: #{inspect(reason)}")
+
+      _ ->
+        Logger.warning("No usable price for position #{position.id} (#{position.market_id})")
+    end
+  end
+
+  # Unlike entry, the current price may be exactly 0 or 1: the market has resolved.
+  defp current_price(market, "buy_yes"), do: market.yes_price
+  defp current_price(market, "buy_no"), do: market.no_price
+  defp current_price(_market, _action), do: nil
+
+  # P&L update and closing happen in a single UPDATE, so a position can't end up
+  # with new P&L but a stale status (or the other way around).
+  defp apply_price(position, current_price) do
+    pnl_pct = calculate_pnl(position, current_price)
+    pnl_usd = pnl_usd(position, pnl_pct)
+    close_reason = close_reason(pnl_pct)
+
+    attrs = %{exit_price: current_price, pnl: pnl_usd}
+    attrs = if close_reason, do: Map.put(attrs, :status, "closed"), else: attrs
+
+    case position |> Position.changeset(attrs) |> Repo.update() do
+      {:ok, _} when is_nil(close_reason) ->
+        :ok
+
+      {:ok, _} ->
+        Logger.info(
+          "🔒 Position closed (#{close_reason}): #{position.question} | P&L: $#{Decimal.round(pnl_usd, 2)} (#{pnl_pct |> Decimal.mult(100) |> Decimal.round(1)}%)"
+        )
+
+      {:error, changeset} ->
+        Logger.error("Failed to update position #{position.id}: #{inspect(changeset.errors)}")
+    end
+  end
+
+  defp close_reason(pnl_pct) do
+    cond do
+      Decimal.compare(pnl_pct, @take_profit) != :lt -> "take_profit"
+      Decimal.compare(pnl_pct, @stop_loss) != :gt -> "stop_loss"
+      true -> nil
+    end
+  end
 
   defp calculate_pnl(position, current_price) do
     current_price
@@ -49,45 +85,5 @@ defmodule Polybot.Trading.PositionManager do
 
   defp pnl_usd(position, pnl_pct) do
     position.cost |> Decimal.mult(pnl_pct) |> Decimal.round(@money_scale)
-  end
-
-  defp update_position_pnl(position, current_price, pnl_pct) do
-    pnl_usd = pnl_usd(position, pnl_pct)
-
-    position
-    |> Position.changeset(%{
-      exit_price: current_price,
-      pnl: pnl_usd
-    })
-    |> Repo.update()
-  end
-
-  defp maybe_close_position(position, current_price, pnl_pct) do
-    cond do
-      Decimal.compare(pnl_pct, @take_profit) != :lt ->
-        close_position(position, current_price, pnl_pct, "take_profit")
-
-      Decimal.compare(pnl_pct, @stop_loss) != :gt ->
-        close_position(position, current_price, pnl_pct, "stop_loss")
-
-      true ->
-        :ok
-    end
-  end
-
-  defp close_position(position, current_price, pnl_pct, reason) do
-    pnl_usd = pnl_usd(position, pnl_pct)
-
-    position
-    |> Position.changeset(%{
-      status: "closed",
-      exit_price: current_price,
-      pnl: pnl_usd
-    })
-    |> Repo.update()
-
-    Logger.info(
-      "🔒 Position closed (#{reason}): #{position.question} | P&L: $#{Decimal.round(pnl_usd, 2)} (#{pnl_pct |> Decimal.mult(100) |> Decimal.round(1)}%)"
-    )
   end
 end

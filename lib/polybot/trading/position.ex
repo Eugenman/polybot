@@ -32,5 +32,8 @@ defmodule Polybot.Trading.Position do
       :paper
     ])
     |> validate_required([:market_id, :question, :action, :entry_price])
+    |> validate_inclusion(:action, ["buy_yes", "buy_no"])
+    |> validate_inclusion(:status, ["open", "closed"])
+    |> validate_number(:entry_price, greater_than: 0, less_than: 1)
   end
 end

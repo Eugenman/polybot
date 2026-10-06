@@ -30,32 +30,34 @@ defmodule Polybot.Scheduler do
 
   @impl true
   def handle_info(:scan, state) do
-    Logger.info("Starting market scan cycle #{state.cycle + 1}")
+    cycle = state.cycle + 1
+    Logger.info("Starting market scan cycle #{cycle}")
 
-    decisions = scan_markets()
+    decisions = scan_markets(cycle)
     Polybot.Trading.PositionManager.update_positions()
 
     # Schedule next scan
     Process.send_after(self(), :scan, @interval_ms)
 
-    {:noreply, %{state | cycle: state.cycle + 1, decisions: decisions}}
+    {:noreply, %{state | cycle: cycle, decisions: decisions}}
   end
 
   @impl true
   def handle_cast(:scan, state) do
     Logger.info("Manual scan triggered")
-    decisions = scan_markets()
+    # A manual scan is attributed to the current cycle and does not start a new one.
+    decisions = scan_markets(state.cycle)
     Polybot.Trading.PositionManager.update_positions()
     {:noreply, %{state | decisions: decisions}}
   end
 
   # Private
 
-  defp scan_markets do
+  defp scan_markets(cycle) do
     case Polybot.Polymarket.Gamma.fetch_political_and_sports_markets() do
       {:ok, markets} ->
         Logger.info("Fetched #{length(markets)} relevant markets")
-        analyze_markets(markets)
+        analyze_markets(markets, cycle)
 
       {:error, reason} ->
         Logger.error("Failed to fetch markets: #{inspect(reason)}")
@@ -63,24 +65,37 @@ defmodule Polybot.Scheduler do
     end
   end
 
-  defp analyze_markets(markets) do
+  defp analyze_markets(markets, cycle) do
     markets
     |> Enum.take(20)
     |> Enum.map(fn market ->
       Process.sleep(2000)
-
-      case Polybot.AI.Analyst.analyze(market) do
-        {:ok, decision} ->
-          log_decision(decision)
-          Polybot.Trading.PaperTrader.process_decision(decision, 0)
-          decision
-
-        {:error, reason} ->
-          Logger.error("Failed to analyze #{market.question}: #{inspect(reason)}")
-          nil
-      end
+      analyze_market(market, cycle)
     end)
     |> Enum.reject(&is_nil/1)
+  end
+
+  # One bad market must not crash the scheduler: a crash would restart it, the first scan
+  # would run again after 10 s, and a persistent error would turn into a tight retry loop
+  # against the Claude and Gamma APIs.
+  defp analyze_market(market, cycle) do
+    case Polybot.AI.Analyst.analyze(market) do
+      {:ok, decision} ->
+        log_decision(decision)
+        Polybot.Trading.PaperTrader.process_decision(decision, cycle)
+        decision
+
+      {:error, reason} ->
+        Logger.error("Failed to analyze #{market.question}: #{inspect(reason)}")
+        nil
+    end
+  rescue
+    error ->
+      Logger.error(
+        "Crashed while processing #{market.id}: #{Exception.format(:error, error, __STACKTRACE__)}"
+      )
+
+      nil
   end
 
   defp log_decision(decision) do

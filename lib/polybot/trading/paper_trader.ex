@@ -57,34 +57,52 @@ defmodule Polybot.Trading.PaperTrader do
           where: p.market_id == ^decision.market_id and p.status == "open"
       )
 
-    if already_open do
-      Logger.debug("Position already open for #{decision.market_id}, skipping")
-    else
-      position_size = Decimal.mult(@capital, @max_position_pct)
-      entry_price = decision.market_price
-      shares = position_size |> Decimal.div(entry_price) |> Decimal.round(@shares_scale)
+    entry_price = entry_price(decision)
 
-      %Position{}
-      |> Position.changeset(%{
-        market_id: decision.market_id,
-        question: decision.question,
-        action: decision.action,
-        entry_price: entry_price,
-        shares: shares,
-        cost: position_size,
-        status: "open",
-        paper: true
-      })
-      |> Repo.insert()
-      |> case do
-        {:ok, p} ->
-          Logger.info(
-            "📝 Paper position opened: #{p.action} #{p.market_id} @ #{p.entry_price}, cost: $#{p.cost}"
-          )
+    cond do
+      already_open ->
+        Logger.debug("Position already open for #{decision.market_id}, skipping")
 
-        {:error, changeset} ->
-          Logger.error("Failed to open position: #{inspect(changeset.errors)}")
-      end
+      not positive?(entry_price) ->
+        Logger.warning("No valid #{decision.action} price for #{decision.market_id}, skipping")
+
+      true ->
+        insert_position(decision, entry_price)
+    end
+  end
+
+  # A YES position is bought at the YES price, a NO position at the NO price.
+  # P&L is later tracked against the same side's price in PositionManager.
+  defp entry_price(%{action: "buy_yes", market_price: yes_price}), do: yes_price
+  defp entry_price(%{action: "buy_no"} = decision), do: Map.get(decision, :no_price)
+
+  defp positive?(%Decimal{} = price), do: Decimal.positive?(price)
+  defp positive?(_), do: false
+
+  defp insert_position(decision, entry_price) do
+    position_size = Decimal.mult(@capital, @max_position_pct)
+    shares = position_size |> Decimal.div(entry_price) |> Decimal.round(@shares_scale)
+
+    %Position{}
+    |> Position.changeset(%{
+      market_id: decision.market_id,
+      question: decision.question,
+      action: decision.action,
+      entry_price: entry_price,
+      shares: shares,
+      cost: position_size,
+      status: "open",
+      paper: true
+    })
+    |> Repo.insert()
+    |> case do
+      {:ok, p} ->
+        Logger.info(
+          "📝 Paper position opened: #{p.action} #{p.market_id} @ #{p.entry_price}, cost: $#{p.cost}"
+        )
+
+      {:error, changeset} ->
+        Logger.error("Failed to open position: #{inspect(changeset.errors)}")
     end
   end
 
