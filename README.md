@@ -38,37 +38,22 @@ flowchart LR
 
 ## Design decisions
 
-**Money is `Decimal`, never float.** Prices, probabilities, costs, shares and P&L are
-`numeric` in Postgres and `Decimal` in Elixir. API prices arrive as strings and are parsed
-straight to `Decimal`. One trap worth knowing: Decimals are structs, so `pnl >= 0` compares
-terms and is always true. Comparisons go through `Decimal.compare/2`.
+**Money is `Decimal`, never float.** Prices, probabilities and amounts are `numeric` in
+Postgres and `Decimal` in Elixir, parsed straight from API strings. Decimals are structs, so
+`pnl >= 0` is always true; comparisons use `Decimal.compare/2`.
 
-**The model estimates, the code decides.** Claude returns only a probability. The edge
-(`probability − YES price`) is computed in code, and an action that contradicts its sign
-(buying NO when YES looks underpriced) becomes `pass`. Malformed answers and probabilities
-outside [0, 1] are rejected.
+**The model estimates, the code decides.** Claude returns only a probability. The edge is
+computed in code; an action that contradicts it becomes `pass`, malformed answers are
+rejected. Each side is priced on its own: YES at the YES price, NO at the NO price.
 
-**Each side is priced on its own.** A YES position is bought and tracked at the YES price,
-a NO position at the NO price. (An earlier version bought NO at the YES price, which made
-P&L for NO positions meaningless.)
+**Risk limits hold under concurrency.** Max 5 open positions, max 50% of capital, one per
+market. Checks and insert run in one transaction under `pg_advisory_xact_lock`; without it,
+the concurrency test opens 18–19 positions instead of 5. A partial unique index and CHECK
+constraints back this up in the database.
 
-**Risk limits hold under concurrency.** At most 5 open positions, at most 50% of capital
-deployed, one open position per market. The limit checks and the insert run in one
-transaction under `pg_advisory_xact_lock`, so two concurrent opens can't both see
-"4 of 5" and both insert. Without the lock, the concurrency test opens 18–19 positions
-instead of 5.
-
-**The database is the last line of defense.** A partial unique index allows one open
-position per market. CHECK constraints reject unknown statuses and actions, entry prices
-outside (0, 1) and non-positive costs, even if application code is bypassed.
-
-**Failures stay local.** An error while analyzing one market is logged and the cycle goes
-on. Letting the scheduler crash would restart it, rerun the first scan after 10 seconds,
-and turn a persistent error into a tight retry loop against the APIs. The exception is an
-error that would fail every market the same way (invalid key, no permissions, unknown
-model, empty credit balance): it stops the scan after the first request, and the next
-scheduled scan tries again. Rate limits and overload stay per-market errors. P&L update and
-closing happen in a single `UPDATE`.
+**Failures stay local.** One bad market is logged and skipped instead of crashing the
+scheduler into a retry loop. Errors that would fail every market (bad key, no credits) stop
+the scan; the next scheduled scan retries.
 
 ## Running locally
 
