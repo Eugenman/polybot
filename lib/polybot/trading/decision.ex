@@ -5,10 +5,10 @@ defmodule Polybot.Trading.Decision do
   schema "decisions" do
     field :market_id, :string
     field :question, :string
-    field :market_price, :float
-    field :our_probability, :float
+    field :market_price, :decimal
+    field :our_probability, :decimal
     field :confidence, :string
-    field :edge, :float
+    field :edge, :decimal
     field :action, :string
     field :reasoning, :string
     field :cycle, :integer, default: 0

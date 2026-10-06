@@ -9,9 +9,10 @@ defmodule Polybot.Trading.PositionManager do
   alias Polybot.Polymarket.Gamma
 
   # close if profit >= 50%
-  @take_profit 0.5
+  @take_profit Decimal.new("0.5")
   # close if loss <= -40%
-  @stop_loss -0.4
+  @stop_loss Decimal.new("-0.4")
+  @money_scale 8
 
   def update_positions do
     positions =
@@ -41,11 +42,17 @@ defmodule Polybot.Trading.PositionManager do
   defp get_current_price(market, _), do: market.yes_price
 
   defp calculate_pnl(position, current_price) do
-    (current_price - position.entry_price) / position.entry_price
+    current_price
+    |> Decimal.sub(position.entry_price)
+    |> Decimal.div(position.entry_price)
+  end
+
+  defp pnl_usd(position, pnl_pct) do
+    position.cost |> Decimal.mult(pnl_pct) |> Decimal.round(@money_scale)
   end
 
   defp update_position_pnl(position, current_price, pnl_pct) do
-    pnl_usd = position.cost * pnl_pct
+    pnl_usd = pnl_usd(position, pnl_pct)
 
     position
     |> Position.changeset(%{
@@ -57,10 +64,10 @@ defmodule Polybot.Trading.PositionManager do
 
   defp maybe_close_position(position, current_price, pnl_pct) do
     cond do
-      pnl_pct >= @take_profit ->
+      Decimal.compare(pnl_pct, @take_profit) != :lt ->
         close_position(position, current_price, pnl_pct, "take_profit")
 
-      pnl_pct <= @stop_loss ->
+      Decimal.compare(pnl_pct, @stop_loss) != :gt ->
         close_position(position, current_price, pnl_pct, "stop_loss")
 
       true ->
@@ -69,7 +76,7 @@ defmodule Polybot.Trading.PositionManager do
   end
 
   defp close_position(position, current_price, pnl_pct, reason) do
-    pnl_usd = position.cost * pnl_pct
+    pnl_usd = pnl_usd(position, pnl_pct)
 
     position
     |> Position.changeset(%{
@@ -80,7 +87,7 @@ defmodule Polybot.Trading.PositionManager do
     |> Repo.update()
 
     Logger.info(
-      "🔒 Position closed (#{reason}): #{position.question} | P&L: $#{Float.round(pnl_usd, 2)} (#{Float.round(pnl_pct * 100, 1)}%)"
+      "🔒 Position closed (#{reason}): #{position.question} | P&L: $#{Decimal.round(pnl_usd, 2)} (#{pnl_pct |> Decimal.mult(100) |> Decimal.round(1)}%)"
     )
   end
 end

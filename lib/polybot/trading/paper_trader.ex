@@ -6,20 +6,23 @@ defmodule Polybot.Trading.PaperTrader do
   alias Polybot.Repo
   alias Polybot.Trading.{Decision, Position}
 
-  @capital 1000.0
-  @max_position_pct 0.10
-  @min_edge 0.10
+  @capital Decimal.new("1000")
+  @max_position_pct Decimal.new("0.10")
+  @min_edge Decimal.new("0.10")
+  @shares_scale 8
 
   def process_decision(decision, cycle \\ 0) do
     # Save decision to DB
     save_decision(decision, cycle)
 
     # Open position if action is buy
-    if decision.action in ["buy_yes", "buy_no"] and
-         abs(decision.edge) >= @min_edge do
+    if decision.action in ["buy_yes", "buy_no"] and edge_large_enough?(decision.edge) do
       open_position(decision)
     end
   end
+
+  defp edge_large_enough?(nil), do: false
+  defp edge_large_enough?(edge), do: Decimal.compare(Decimal.abs(edge), @min_edge) != :lt
 
   def save_decision(decision, cycle) do
     %Decision{}
@@ -57,9 +60,9 @@ defmodule Polybot.Trading.PaperTrader do
     if already_open do
       Logger.debug("Position already open for #{decision.market_id}, skipping")
     else
-      position_size = @capital * @max_position_pct
+      position_size = Decimal.mult(@capital, @max_position_pct)
       entry_price = decision.market_price
-      shares = position_size / entry_price
+      shares = position_size |> Decimal.div(entry_price) |> Decimal.round(@shares_scale)
 
       %Position{}
       |> Position.changeset(%{

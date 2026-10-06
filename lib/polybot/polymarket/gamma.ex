@@ -4,6 +4,8 @@ defmodule Polybot.Polymarket.Gamma do
   Fetches and filters markets.
   """
 
+  alias Polybot.Decimals
+
   @base_url "https://gamma-api.polymarket.com"
 
   @doc """
@@ -149,8 +151,8 @@ defmodule Polybot.Polymarket.Gamma do
       end_date: market["endDate"],
       yes_price: yes_price,
       no_price: no_price,
-      best_ask: market["bestAsk"] |> parse_float(),
-      best_bid: market["bestBid"] |> parse_float(),
+      best_ask: Decimals.to_decimal(market["bestAsk"]),
+      best_bid: Decimals.to_decimal(market["bestBid"]),
       condition_id: market["conditionId"]
     }
   end
@@ -166,13 +168,13 @@ defmodule Polybot.Polymarket.Gamma do
       yes_price =
         pairs
         |> Enum.find_value(fn {o, p} ->
-          if String.downcase(o) == "yes", do: parse_float(p)
+          if String.downcase(o) == "yes", do: Decimals.to_decimal(p)
         end)
 
       no_price =
         pairs
         |> Enum.find_value(fn {o, p} ->
-          if String.downcase(o) == "no", do: parse_float(p)
+          if String.downcase(o) == "no", do: Decimals.to_decimal(p)
         end)
 
       {yes_price, no_price}
@@ -181,6 +183,8 @@ defmodule Polybot.Polymarket.Gamma do
     end
   end
 
+  # Volume and liquidity are only used for filtering and display, so floats are fine here.
+  # Prices go through Decimals.to_decimal/1.
   defp parse_float(nil), do: 0.0
   defp parse_float(val) when is_float(val), do: val
 

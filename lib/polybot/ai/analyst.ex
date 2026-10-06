@@ -5,20 +5,26 @@ defmodule Polybot.AI.Analyst do
   Stage 2: Deep analysis with web search for promising markets
   """
 
+  alias Polybot.Decimals
+
   @anthropic_url "https://api.anthropic.com/v1/messages"
   @model "claude-haiku-4-5-20251001"
+  @deep_analysis_min_edge Decimal.new("0.10")
 
   def analyze(market) do
     case quick_analysis(market) do
-      {:ok, %{edge: edge} = quick} when abs(edge) >= 0.10 ->
-        deep_analysis(market, quick)
-
       {:ok, quick} ->
-        {:ok, quick}
+        if promising?(quick.edge), do: deep_analysis(market, quick), else: {:ok, quick}
 
       {:error, reason} ->
         {:error, reason}
     end
+  end
+
+  defp promising?(nil), do: false
+
+  defp promising?(edge) do
+    Decimal.compare(Decimal.abs(edge), @deep_analysis_min_edge) != :lt
   end
 
   defp quick_analysis(market) do
@@ -74,7 +80,7 @@ defmodule Polybot.AI.Analyst do
     You are a prediction market analyst. Give a quick probability estimate.
 
     Market: #{market.question}
-    Current YES price: #{market.yes_price} (#{round(market.yes_price * 100)}%)
+    Current YES price: #{market.yes_price} (#{percent(market.yes_price)}%)
     Volume: $#{round(market.volume)}
     End date: #{market.end_date}
 
@@ -94,7 +100,7 @@ defmodule Polybot.AI.Analyst do
     You are a prediction market analyst. Search for recent news and make a final decision.
 
     Market: #{market.question}
-    Current YES price: #{market.yes_price} (#{round(market.yes_price * 100)}%)
+    Current YES price: #{market.yes_price} (#{percent(market.yes_price)}%)
     Volume: $#{round(market.volume)}
     End date: #{market.end_date}
     Quick estimate: #{quick.our_probability} (edge: #{quick.edge})
@@ -105,6 +111,8 @@ defmodule Polybot.AI.Analyst do
     {"probability": 0.65, "confidence": "high", "edge": 0.10, "reasoning": "detailed reasoning with news", "action": "buy_yes"}
     """
   end
+
+  defp percent(price), do: price |> Decimal.mult(100) |> Decimal.round(0)
 
   defp parse_response({:ok, response}, market) do
     text =
@@ -144,9 +152,9 @@ defmodule Polybot.AI.Analyst do
            market_id: market.id,
            question: market.question,
            market_price: market.yes_price,
-           our_probability: data["probability"],
+           our_probability: Decimals.to_decimal(data["probability"]),
            confidence: data["confidence"],
-           edge: data["edge"],
+           edge: Decimals.to_decimal(data["edge"]),
            action: action,
            reasoning: reasoning
          }}

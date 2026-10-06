@@ -30,6 +30,11 @@ and opens a paper position if the edge is large enough.
 - `positions` — paper positions with P&L
 - `markets` — created by migration, currently unused
 
+## Conventions
+- Prices, probabilities, money and shares are `Decimal` (DB: `numeric`). Never use floats for them.
+- Parse external numbers with `Polybot.Decimals.to_decimal/1`.
+- Compare Decimals with `Decimal.compare/2` / `Decimal.negative?/1`, never with `>=` / `<` (structs compare as terms).
+
 ## Environment
 - Paper trading only, no real orders are placed
 - Run `mix precommit` before finishing changes (see AGENTS.md)

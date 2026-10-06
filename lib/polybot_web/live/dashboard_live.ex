@@ -38,11 +38,19 @@ defmodule PolybotWeb.DashboardLive do
       total_decisions: Repo.aggregate(Decision, :count, :id),
       open_positions: Repo.aggregate(from(p in Position, where: p.status == "open"), :count, :id),
       total_cost:
-        Repo.aggregate(from(p in Position, where: p.status == "open"), :sum, :cost) || 0.0
+        Repo.aggregate(from(p in Position, where: p.status == "open"), :sum, :cost) ||
+          Decimal.new(0)
     }
 
     [decisions: decisions, positions: positions, stats: stats]
   end
+
+  # Decimals are structs: `pnl >= 0` would compare terms and always be true.
+  defp negative?(nil), do: false
+  defp negative?(value), do: Decimal.negative?(value)
+
+  defp round_or_zero(nil, places), do: Decimal.round(Decimal.new(0), places)
+  defp round_or_zero(value, places), do: Decimal.round(value, places)
 
   def render(assigns) do
     ~H"""
@@ -61,7 +69,7 @@ defmodule PolybotWeb.DashboardLive do
         <div class="bg-base-200 rounded-lg p-4">
           <div class="text-sm opacity-70">Capital Deployed</div>
           <div class="text-3xl font-bold">
-            ${:erlang.float_to_binary(@stats.total_cost, decimals: 0)}
+            ${Decimal.round(@stats.total_cost, 0)}
           </div>
         </div>
       </div>
@@ -94,10 +102,10 @@ defmodule PolybotWeb.DashboardLive do
                 </td>
                 <td>{position.entry_price}</td>
                 <td>{position.exit_price}</td>
-                <td class={if (position.pnl || 0) >= 0, do: "text-success", else: "text-error"}>
-                  ${Float.round(position.pnl || 0.0, 2)}
+                <td class={if negative?(position.pnl), do: "text-error", else: "text-success"}>
+                  ${round_or_zero(position.pnl, 2)}
                 </td>
-                <td>${position.cost}</td>
+                <td>${round_or_zero(position.cost, 2)}</td>
                 <td>{Calendar.strftime(position.inserted_at, "%d %b %H:%M")}</td>
               </tr>
             <% end %>
@@ -133,7 +141,7 @@ defmodule PolybotWeb.DashboardLive do
                     {decision.action}
                   </span>
                 </td>
-                <td>{Float.round(decision.edge || 0.0, 3)}</td>
+                <td>{round_or_zero(decision.edge, 3)}</td>
                 <td>{decision.confidence}</td>
                 <td>{Calendar.strftime(decision.inserted_at, "%d %b %H:%M")}</td>
               </tr>
