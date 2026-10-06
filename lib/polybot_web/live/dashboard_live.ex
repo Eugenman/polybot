@@ -20,22 +20,25 @@ defmodule PolybotWeb.DashboardLive do
   end
 
   defp load_data do
-    decisions = Repo.all(
-      from d in Decision,
-      order_by: [desc: d.inserted_at],
-      limit: 20
-    )
+    decisions =
+      Repo.all(
+        from d in Decision,
+          order_by: [desc: d.inserted_at],
+          limit: 20
+      )
 
-    positions = Repo.all(
-      from p in Position,
-      where: p.status == "open",
-      order_by: [desc: p.inserted_at]
-    )
+    positions =
+      Repo.all(
+        from p in Position,
+          where: p.status == "open",
+          order_by: [desc: p.inserted_at]
+      )
 
     stats = %{
       total_decisions: Repo.aggregate(Decision, :count, :id),
       open_positions: Repo.aggregate(from(p in Position, where: p.status == "open"), :count, :id),
-      total_cost: Repo.aggregate(from(p in Position, where: p.status == "open"), :sum, :cost) || 0.0
+      total_cost:
+        Repo.aggregate(from(p in Position, where: p.status == "open"), :sum, :cost) || 0.0
     }
 
     [decisions: decisions, positions: positions, stats: stats]
@@ -49,15 +52,17 @@ defmodule PolybotWeb.DashboardLive do
       <div class="grid grid-cols-3 gap-4 mb-8">
         <div class="bg-base-200 rounded-lg p-4">
           <div class="text-sm opacity-70">Total Decisions</div>
-          <div class="text-3xl font-bold"><%= @stats.total_decisions %></div>
+          <div class="text-3xl font-bold">{@stats.total_decisions}</div>
         </div>
         <div class="bg-base-200 rounded-lg p-4">
           <div class="text-sm opacity-70">Open Positions</div>
-          <div class="text-3xl font-bold"><%= @stats.open_positions %></div>
+          <div class="text-3xl font-bold">{@stats.open_positions}</div>
         </div>
         <div class="bg-base-200 rounded-lg p-4">
           <div class="text-sm opacity-70">Capital Deployed</div>
-          <div class="text-3xl font-bold">$<%= :erlang.float_to_binary(@stats.total_cost, [decimals: 0]) %></div>
+          <div class="text-3xl font-bold">
+            ${:erlang.float_to_binary(@stats.total_cost, decimals: 0)}
+          </div>
         </div>
       </div>
 
@@ -77,21 +82,24 @@ defmodule PolybotWeb.DashboardLive do
           </thead>
           <tbody>
             <%= for position <- @positions do %>
-            <tr>
-              <td class="max-w-xs truncate"><%= position.question %></td>
-              <td>
-                <span class={["badge", if(position.action == "buy_yes", do: "badge-success", else: "badge-error")]}>
-                  <%= position.action %>
-                </span>
-              </td>
-              <td><%= position.entry_price %></td>
-              <td><%= position.exit_price %></td>
-              <td class={if (position.pnl || 0) >= 0, do: "text-success", else: "text-error"}>
-                $<%= Float.round(position.pnl || 0.0, 2) %>
-              </td>
-              <td>$<%= position.cost %></td>
-              <td><%= Calendar.strftime(position.inserted_at, "%d %b %H:%M") %></td>
-            </tr>
+              <tr>
+                <td class="max-w-xs truncate">{position.question}</td>
+                <td>
+                  <span class={[
+                    "badge",
+                    if(position.action == "buy_yes", do: "badge-success", else: "badge-error")
+                  ]}>
+                    {position.action}
+                  </span>
+                </td>
+                <td>{position.entry_price}</td>
+                <td>{position.exit_price}</td>
+                <td class={if (position.pnl || 0) >= 0, do: "text-success", else: "text-error"}>
+                  ${Float.round(position.pnl || 0.0, 2)}
+                </td>
+                <td>${position.cost}</td>
+                <td>{Calendar.strftime(position.inserted_at, "%d %b %H:%M")}</td>
+              </tr>
             <% end %>
           </tbody>
         </table>
@@ -111,23 +119,24 @@ defmodule PolybotWeb.DashboardLive do
           </thead>
           <tbody>
             <%= for decision <- @decisions do %>
-            <tr>
-              <td class="max-w-xs truncate"><%= decision.question %></td>
-              <td>
-                <span class={["badge",
-                  cond do
-                    decision.action == "buy_yes" -> "badge-success"
-                    decision.action == "buy_no" -> "badge-error"
-                    true -> "badge-ghost"
-                  end
-                ]}>
-                  <%= decision.action %>
-                </span>
-              </td>
-              <td><%= Float.round(decision.edge || 0.0, 3) %></td>
-              <td><%= decision.confidence %></td>
-              <td><%= Calendar.strftime(decision.inserted_at, "%d %b %H:%M") %></td>
-            </tr>
+              <tr>
+                <td class="max-w-xs truncate">{decision.question}</td>
+                <td>
+                  <span class={[
+                    "badge",
+                    cond do
+                      decision.action == "buy_yes" -> "badge-success"
+                      decision.action == "buy_no" -> "badge-error"
+                      true -> "badge-ghost"
+                    end
+                  ]}>
+                    {decision.action}
+                  </span>
+                </td>
+                <td>{Float.round(decision.edge || 0.0, 3)}</td>
+                <td>{decision.confidence}</td>
+                <td>{Calendar.strftime(decision.inserted_at, "%d %b %H:%M")}</td>
+              </tr>
             <% end %>
           </tbody>
         </table>

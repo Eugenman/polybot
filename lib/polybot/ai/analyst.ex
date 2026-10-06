@@ -23,16 +23,21 @@ defmodule Polybot.AI.Analyst do
 
   defp quick_analysis(market) do
     prompt = build_quick_prompt(market)
+
     call_claude(prompt, [])
     |> parse_response(market)
   end
 
   defp deep_analysis(market, quick) do
     prompt = build_deep_prompt(market, quick)
-    tools = [%{
-      "type" => "web_search_20250305",
-      "name" => "web_search"
-    }]
+
+    tools = [
+      %{
+        "type" => "web_search_20250305",
+        "name" => "web_search"
+      }
+    ]
+
     call_claude(prompt, tools)
     |> parse_response(market)
   end
@@ -102,7 +107,8 @@ defmodule Polybot.AI.Analyst do
   end
 
   defp parse_response({:ok, response}, market) do
-    text = response
+    text =
+      response
       |> get_in(["content"])
       |> Enum.filter(fn block -> block["type"] == "text" end)
       |> List.last()
@@ -112,31 +118,38 @@ defmodule Polybot.AI.Analyst do
       end
       |> String.trim()
 
-    json_text = case Regex.run(~r/\{[^{}]*"probability"[^{}]*\}/s, text) do
-      [match] -> match
-      _ -> text
-        |> String.replace(~r/```json\n?/, "")
-        |> String.replace(~r/```\n?/, "")
-        |> String.trim()
-    end
+    json_text =
+      case Regex.run(~r/\{[^{}]*"probability"[^{}]*\}/s, text) do
+        [match] ->
+          match
+
+        _ ->
+          text
+          |> String.replace(~r/```json\n?/, "")
+          |> String.replace(~r/```\n?/, "")
+          |> String.trim()
+      end
 
     case Jason.decode(json_text) do
       {:ok, data} ->
         action = normalize_action(data["action"])
-        reasoning = (data["reasoning"] || "")
+
+        reasoning =
+          (data["reasoning"] || "")
           |> String.replace(~r/<cite[^>]*>/, "")
           |> String.replace(~r/<\/cite>/, "")
 
-        {:ok, %{
-          market_id: market.id,
-          question: market.question,
-          market_price: market.yes_price,
-          our_probability: data["probability"],
-          confidence: data["confidence"],
-          edge: data["edge"],
-          action: action,
-          reasoning: reasoning
-        }}
+        {:ok,
+         %{
+           market_id: market.id,
+           question: market.question,
+           market_price: market.yes_price,
+           our_probability: data["probability"],
+           confidence: data["confidence"],
+           edge: data["edge"],
+           action: action,
+           reasoning: reasoning
+         }}
 
       {:error, _} ->
         {:error, "Failed to parse Claude response: #{text}"}

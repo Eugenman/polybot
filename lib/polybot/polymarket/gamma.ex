@@ -13,15 +13,19 @@ defmodule Polybot.Polymarket.Gamma do
     min_volume = Keyword.get(opts, :min_volume, 10_000)
     limit = Keyword.get(opts, :limit, 50)
 
-    case Req.get("#{@base_url}/markets", params: [
-      active: true,
-      closed: false,
-      limit: limit
-    ]) do
+    case Req.get("#{@base_url}/markets",
+           params: [
+             active: true,
+             closed: false,
+             limit: limit
+           ]
+         ) do
       {:ok, %{status: 200, body: markets}} when is_list(markets) ->
-        filtered = markets
+        filtered =
+          markets
           |> Enum.filter(&filter_market(&1, min_volume))
           |> Enum.map(&parse_market/1)
+
         {:ok, filtered}
 
       {:ok, %{status: status}} ->
@@ -36,35 +40,73 @@ defmodule Polybot.Polymarket.Gamma do
     case Req.get("#{@base_url}/markets/#{market_id}") do
       {:ok, %{status: 200, body: market}} when is_map(market) ->
         {:ok, parse_market(market)}
+
       {:ok, %{status: status}} ->
         {:error, "Unexpected status: #{status}"}
+
       {:error, reason} ->
         {:error, reason}
     end
   end
 
-  @political_keywords ["president", "election", "congress", "senate", "minister", 
-                     "trump", "biden", "war", "ceasefire", "nuclear", "nato",
-                     "iran", "russia", "ukraine", "china", "taiwan", "israel",
-                     "fed", "rate", "gdp", "recession", "tariff", "trade"]
+  @political_keywords [
+    "president",
+    "election",
+    "congress",
+    "senate",
+    "minister",
+    "trump",
+    "biden",
+    "war",
+    "ceasefire",
+    "nuclear",
+    "nato",
+    "iran",
+    "russia",
+    "ukraine",
+    "china",
+    "taiwan",
+    "israel",
+    "fed",
+    "rate",
+    "gdp",
+    "recession",
+    "tariff",
+    "trade"
+  ]
 
-  @sports_keywords ["nba", "nfl", "nhl", "fifa", "world cup", "finals", "championship",
-                    "super bowl", "playoff", "tournament", "win the"]
+  @sports_keywords [
+    "nba",
+    "nfl",
+    "nhl",
+    "fifa",
+    "world cup",
+    "finals",
+    "championship",
+    "super bowl",
+    "playoff",
+    "tournament",
+    "win the"
+  ]
 
   def fetch_political_and_sports_markets(opts \\ []) do
     limit = Keyword.get(opts, :limit, 200)
     min_volume = Keyword.get(opts, :min_volume, 50_000)
 
-    case Req.get("#{@base_url}/markets", params: [
-      active: true,
-      closed: false,
-      limit: limit
-    ]) do
+    case Req.get("#{@base_url}/markets",
+           params: [
+             active: true,
+             closed: false,
+             limit: limit
+           ]
+         ) do
       {:ok, %{status: 200, body: markets}} when is_list(markets) ->
-        filtered = markets
+        filtered =
+          markets
           |> Enum.filter(&filter_market(&1, min_volume))
           |> Enum.filter(&is_relevant_market?/1)
           |> Enum.map(&parse_market/1)
+
         {:ok, filtered}
 
       {:ok, %{status: status}} ->
@@ -77,10 +119,10 @@ defmodule Polybot.Polymarket.Gamma do
 
   defp is_relevant_market?(market) do
     question = String.downcase(market["question"] || "")
-    
+
     political = Enum.any?(@political_keywords, &String.contains?(question, &1))
     sports = Enum.any?(@sports_keywords, &String.contains?(question, &1))
-    
+
     political || sports
   end
 
@@ -93,10 +135,11 @@ defmodule Polybot.Polymarket.Gamma do
   end
 
   defp parse_market(market) do
-    {yes_price, no_price} = parse_outcome_prices(
-      market["outcomes"],
-      market["outcomePrices"]
-    )
+    {yes_price, no_price} =
+      parse_outcome_prices(
+        market["outcomes"],
+        market["outcomePrices"]
+      )
 
     %{
       id: market["id"],
@@ -114,16 +157,24 @@ defmodule Polybot.Polymarket.Gamma do
 
   defp parse_outcome_prices(nil, _), do: {nil, nil}
   defp parse_outcome_prices(_, nil), do: {nil, nil}
+
   defp parse_outcome_prices(outcomes_json, prices_json) do
     with {:ok, outcomes} <- Jason.decode(outcomes_json),
          {:ok, prices} <- Jason.decode(prices_json) do
       pairs = Enum.zip(outcomes, prices)
-      yes_price = pairs |> Enum.find_value(fn {o, p} ->
-        if String.downcase(o) == "yes", do: parse_float(p)
-      end)
-      no_price = pairs |> Enum.find_value(fn {o, p} ->
-        if String.downcase(o) == "no", do: parse_float(p)
-      end)
+
+      yes_price =
+        pairs
+        |> Enum.find_value(fn {o, p} ->
+          if String.downcase(o) == "yes", do: parse_float(p)
+        end)
+
+      no_price =
+        pairs
+        |> Enum.find_value(fn {o, p} ->
+          if String.downcase(o) == "no", do: parse_float(p)
+        end)
+
       {yes_price, no_price}
     else
       _ -> {nil, nil}
@@ -132,11 +183,13 @@ defmodule Polybot.Polymarket.Gamma do
 
   defp parse_float(nil), do: 0.0
   defp parse_float(val) when is_float(val), do: val
+
   defp parse_float(val) when is_binary(val) do
     case Float.parse(val) do
       {f, _} -> f
       :error -> 0.0
     end
   end
+
   defp parse_float(val) when is_integer(val), do: val * 1.0
 end

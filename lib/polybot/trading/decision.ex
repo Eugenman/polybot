@@ -18,8 +18,17 @@ defmodule Polybot.Trading.Decision do
 
   def changeset(decision, attrs) do
     decision
-    |> cast(attrs, [:market_id, :question, :market_price, :our_probability,
-                    :confidence, :edge, :action, :reasoning, :cycle])
+    |> cast(attrs, [
+      :market_id,
+      :question,
+      :market_price,
+      :our_probability,
+      :confidence,
+      :edge,
+      :action,
+      :reasoning,
+      :cycle
+    ])
     |> validate_required([:market_id, :question, :action])
   end
 end

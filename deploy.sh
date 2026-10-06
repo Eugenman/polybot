@@ -1,20 +1,18 @@
-cat > ~/polybot/deploy.sh << 'EOF'
 #!/bin/bash
+# Deploys the latest master on the VPS. Run from the repository root on the server.
 
-set -e
+set -euo pipefail
 
-echo "🚀 Deploying polybot to VPS..."
+cd "$(dirname "$0")"
 
-# Pull latest code
-git pull origin feature/vps-deploy
+COMPOSE="docker compose -f docker-compose.prod.yml"
 
-# Build and restart containers
-docker compose -f docker-compose.prod.yml down
-docker compose -f docker-compose.prod.yml build --no-cache
-docker compose -f docker-compose.prod.yml up -d
+echo "🚀 Deploying polybot..."
 
-echo "✅ Deploy complete!"
-echo "📋 Logs: docker compose -f docker-compose.prod.yml logs -f"
-EOF
+git pull --ff-only origin master
 
-chmod +x ~/polybot/deploy.sh
+# Rebuild and replace the app container; the database container keeps running.
+$COMPOSE up -d --build
+
+echo "✅ Deploy complete"
+echo "📋 Logs: $COMPOSE logs -f app"

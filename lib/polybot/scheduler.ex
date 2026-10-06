@@ -6,7 +6,8 @@ defmodule Polybot.Scheduler do
   use GenServer
   require Logger
 
-  @interval_ms 30 * 60 * 1000  # 30 minutes
+  # 30 minutes
+  @interval_ms 30 * 60 * 1000
 
   # Client API
 
@@ -67,6 +68,7 @@ defmodule Polybot.Scheduler do
     |> Enum.take(20)
     |> Enum.map(fn market ->
       Process.sleep(2000)
+
       case Polybot.AI.Analyst.analyze(market) do
         {:ok, decision} ->
           log_decision(decision)

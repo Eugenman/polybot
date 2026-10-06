@@ -19,8 +19,18 @@ defmodule Polybot.Trading.Position do
 
   def changeset(position, attrs) do
     position
-    |> cast(attrs, [:market_id, :question, :action, :entry_price,
-                    :shares, :cost, :exit_price, :pnl, :status, :paper])
+    |> cast(attrs, [
+      :market_id,
+      :question,
+      :action,
+      :entry_price,
+      :shares,
+      :cost,
+      :exit_price,
+      :pnl,
+      :status,
+      :paper
+    ])
     |> validate_required([:market_id, :question, :action, :entry_price])
   end
 end

@@ -8,14 +8,17 @@ defmodule Polybot.Trading.PositionManager do
   alias Polybot.Trading.Position
   alias Polybot.Polymarket.Gamma
 
-  @take_profit 0.5   # close if profit >= 50%
-  @stop_loss -0.4    # close if loss <= -40%
+  # close if profit >= 50%
+  @take_profit 0.5
+  # close if loss <= -40%
+  @stop_loss -0.4
 
   def update_positions do
-    positions = Repo.all(
-      from p in Position,
-      where: p.status == "open" and p.paper == true
-    )
+    positions =
+      Repo.all(
+        from p in Position,
+          where: p.status == "open" and p.paper == true
+      )
 
     Logger.info("Updating #{length(positions)} open positions")
 
@@ -76,6 +79,8 @@ defmodule Polybot.Trading.PositionManager do
     })
     |> Repo.update()
 
-    Logger.info("🔒 Position closed (#{reason}): #{position.question} | P&L: $#{Float.round(pnl_usd, 2)} (#{Float.round(pnl_pct * 100, 1)}%)")
+    Logger.info(
+      "🔒 Position closed (#{reason}): #{position.question} | P&L: $#{Float.round(pnl_usd, 2)} (#{Float.round(pnl_pct * 100, 1)}%)"
+    )
   end
 end

@@ -16,7 +16,7 @@ defmodule Polybot.Trading.PaperTrader do
 
     # Open position if action is buy
     if decision.action in ["buy_yes", "buy_no"] and
-       abs(decision.edge) >= @min_edge do
+         abs(decision.edge) >= @min_edge do
       open_position(decision)
     end
   end
@@ -38,6 +38,7 @@ defmodule Polybot.Trading.PaperTrader do
     |> case do
       {:ok, d} ->
         Logger.debug("Decision saved: #{d.action} on #{d.market_id}")
+
       {:error, changeset} ->
         Logger.error("Failed to save decision: #{inspect(changeset.errors)}")
     end
@@ -47,10 +48,11 @@ defmodule Polybot.Trading.PaperTrader do
     import Ecto.Query
 
     # Check if position already open for this market
-    already_open = Repo.exists?(
-      from p in Position,
-      where: p.market_id == ^decision.market_id and p.status == "open"
-    )
+    already_open =
+      Repo.exists?(
+        from p in Position,
+          where: p.market_id == ^decision.market_id and p.status == "open"
+      )
 
     if already_open do
       Logger.debug("Position already open for #{decision.market_id}, skipping")
@@ -73,7 +75,10 @@ defmodule Polybot.Trading.PaperTrader do
       |> Repo.insert()
       |> case do
         {:ok, p} ->
-          Logger.info("📝 Paper position opened: #{p.action} #{p.market_id} @ #{p.entry_price}, cost: $#{p.cost}")
+          Logger.info(
+            "📝 Paper position opened: #{p.action} #{p.market_id} @ #{p.entry_price}, cost: $#{p.cost}"
+          )
+
         {:error, changeset} ->
           Logger.error("Failed to open position: #{inspect(changeset.errors)}")
       end
