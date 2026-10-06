@@ -4,6 +4,7 @@ defmodule Polybot.Application do
   @moduledoc false
 
   use Application
+  require Logger
 
   @impl true
   def start(_type, _args) do
@@ -20,7 +21,18 @@ defmodule Polybot.Application do
     # See https://hexdocs.pm/elixir/Supervisor.html
     # for other strategies and supported options
     opts = [strategy: :one_for_one, name: Polybot.Supervisor]
-    Supervisor.start_link(children, opts)
+
+    with {:ok, pid} <- Supervisor.start_link(children, opts) do
+      log_dashboard_url()
+      {:ok, pid}
+    end
+  end
+
+  # A clickable link in the terminal; skipped when the HTTP server isn't running (tests).
+  defp log_dashboard_url do
+    if Phoenix.Endpoint.server?(:polybot, PolybotWeb.Endpoint) do
+      Logger.info("📊 Dashboard: #{PolybotWeb.Endpoint.url()}/dashboard")
+    end
   end
 
   # Disabled in tests: the scheduler would call Gamma and Claude on its own.

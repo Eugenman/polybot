@@ -11,7 +11,8 @@ config :polybot, Polybot.Repo,
   pool_size: 10
 
 config :polybot, PolybotWeb.Endpoint,
-  http: [ip: {0, 0, 0, 0}],
+  # Localhost only: the dashboard has no authentication.
+  http: [ip: {127, 0, 0, 1}],
   server: true,
   check_origin: false,
   code_reloader: true,

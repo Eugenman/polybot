@@ -65,15 +65,29 @@ defmodule Polybot.Scheduler do
     end
   end
 
+  # A fatal API error (bad key, no credits) stops the scan: every remaining market would fail
+  # the same way. The next scheduled scan tries again, so the bot recovers on its own once
+  # the problem is fixed.
   defp analyze_markets(markets, cycle) do
     markets
     |> Enum.take(20)
-    |> Enum.map(fn market ->
+    |> Enum.reduce_while([], fn market, decisions ->
       # Spreads Claude requests out to stay under API rate limits.
       Process.sleep(request_delay_ms())
-      analyze_market(market, cycle)
+
+      case analyze_market(market, cycle) do
+        {:ok, decision} ->
+          {:cont, [decision | decisions]}
+
+        :skip ->
+          {:cont, decisions}
+
+        {:halt, reason} ->
+          Logger.error("Stopping scan cycle #{cycle}, Claude API is unusable: #{reason}")
+          {:halt, decisions}
+      end
     end)
-    |> Enum.reject(&is_nil/1)
+    |> Enum.reverse()
   end
 
   # One bad market must not crash the scheduler: a crash would restart it, the first scan
@@ -84,11 +98,14 @@ defmodule Polybot.Scheduler do
       {:ok, decision} ->
         log_decision(decision)
         Polybot.Trading.PaperTrader.process_decision(decision, cycle)
-        decision
+        {:ok, decision}
+
+      {:error, {:fatal, reason}} ->
+        {:halt, reason}
 
       {:error, reason} ->
         Logger.error("Failed to analyze #{market.question}: #{inspect(reason)}")
-        nil
+        :skip
     end
   rescue
     error ->
@@ -96,7 +113,7 @@ defmodule Polybot.Scheduler do
         "Crashed while processing #{market.id}: #{Exception.format(:error, error, __STACKTRACE__)}"
       )
 
-      nil
+      :skip
   end
 
   defp request_delay_ms do

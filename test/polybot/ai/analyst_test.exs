@@ -147,6 +147,42 @@ defmodule Polybot.AI.AnalystTest do
     end
   end
 
+  describe "API errors" do
+    # Response body from a real run with an empty credit balance.
+    @no_credits %{
+      "type" => "error",
+      "error" => %{
+        "type" => "invalid_request_error",
+        "message" =>
+          "Your credit balance is too low to access the Anthropic API. Please go to Plans & Billing to upgrade or purchase credits."
+      }
+    }
+
+    test "an empty credit balance is fatal" do
+      stub_claude([{400, @no_credits}])
+
+      assert {:error, {:fatal, "API error 400" <> _}} = Analyst.analyze(market("0.40", "0.60"))
+    end
+
+    test "an invalid API key is fatal" do
+      stub_claude([{401, %{"error" => %{"type" => "authentication_error"}}}])
+
+      assert {:error, {:fatal, "API error 401" <> _}} = Analyst.analyze(market("0.40", "0.60"))
+    end
+
+    test "other bad requests only fail this market" do
+      stub_claude([{400, %{"error" => %{"message" => "prompt is too long"}}}])
+
+      assert {:error, "API error 400" <> _} = Analyst.analyze(market("0.40", "0.60"))
+    end
+
+    test "rate limits are transient" do
+      stub_claude([{429, %{"error" => %{"type" => "rate_limit_error"}}}])
+
+      assert {:error, "API error 429" <> _} = Analyst.analyze(market("0.40", "0.60"))
+    end
+  end
+
   test "does not call Claude for a market without tradable prices" do
     stub_claude([])
 

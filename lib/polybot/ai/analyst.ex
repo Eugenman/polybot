@@ -67,12 +67,23 @@ defmodule Polybot.AI.Analyst do
         {:ok, response}
 
       {:ok, %{status: status, body: body}} ->
-        {:error, "API error #{status}: #{inspect(body)}"}
+        message = "API error #{status}: #{inspect(body)}"
+        if fatal_error?(status, body), do: {:error, {:fatal, message}}, else: {:error, message}
 
       {:error, reason} ->
         {:error, reason}
     end
   end
+
+  # Errors that will fail for every market until a human fixes something: a bad or revoked
+  # key, missing permissions, an unknown model, an empty credit balance. Rate limits (429),
+  # overload (529) and server errors (5xx) are transient and stay per-market errors.
+  defp fatal_error?(status, _body) when status in [401, 403, 404], do: true
+
+  defp fatal_error?(400, %{"error" => %{"message" => message}}) when is_binary(message),
+    do: message =~ "credit balance"
+
+  defp fatal_error?(_status, _body), do: false
 
   defp build_quick_prompt(market) do
     """

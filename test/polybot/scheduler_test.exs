@@ -60,6 +60,26 @@ defmodule Polybot.SchedulerTest do
     assert Decimal.equal?(entry, "0.30")
   end
 
+  test "a fatal API error stops the scan after the first request" do
+    test_pid = self()
+
+    Req.Test.stub(Analyst, fn conn ->
+      send(test_pid, :claude_request)
+
+      conn
+      |> Plug.Conn.put_status(400)
+      |> Req.Test.json(%{"error" => %{"message" => "Your credit balance is too low"}})
+    end)
+
+    assert {:noreply, %{cycle: 1, decisions: []}} =
+             Scheduler.handle_info(:scan, %{cycle: 0, decisions: []})
+
+    # Two tradable markets, but only one request: the second would fail the same way.
+    assert_received :claude_request
+    refute_received :claude_request
+    assert Repo.all(Decision) == []
+  end
+
   test "a manual scan keeps the current cycle number" do
     assert {:noreply, %{cycle: 3}} = Scheduler.handle_cast(:scan, %{cycle: 3, decisions: []})
     assert [%Decision{cycle: 3}] = Repo.all(Decision)
