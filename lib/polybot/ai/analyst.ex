@@ -62,7 +62,7 @@ defmodule Polybot.AI.Analyst do
 
     body = if tools != [], do: Map.put(body, :tools, tools), else: body
 
-    case Req.post(@anthropic_url, json: body, headers: headers) do
+    case Req.post(@anthropic_url, [json: body, headers: headers] ++ req_options()) do
       {:ok, %{status: 200, body: response}} ->
         {:ok, response}
 
@@ -199,6 +199,12 @@ defmodule Polybot.AI.Analyst do
   defp normalize_action(_), do: "pass"
 
   defp api_key do
-    System.get_env("ANTHROPIC_API_KEY") || raise "ANTHROPIC_API_KEY not set"
+    config()[:api_key] || System.get_env("ANTHROPIC_API_KEY") ||
+      raise "ANTHROPIC_API_KEY not set"
   end
+
+  # Extra Req options from config, e.g. a Req.Test plug in tests.
+  defp req_options, do: config()[:req_options] || []
+
+  defp config, do: Application.get_env(:polybot, __MODULE__, [])
 end

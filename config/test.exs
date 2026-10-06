@@ -20,6 +20,18 @@ config :polybot, PolybotWeb.Endpoint,
   secret_key_base: "Na28Hu691XVQ8gRagurebPhRrfabPL9a6MZXG+eQINZbg7dpOEUk9DZJQLTED1DJ",
   server: false
 
+# No background scanning in tests; HTTP calls go to Req.Test stubs.
+config :polybot, start_scheduler: false
+
+config :polybot, Polybot.Polymarket.Gamma,
+  req_options: [plug: {Req.Test, Polybot.Polymarket.Gamma}, retry: false]
+
+config :polybot, Polybot.AI.Analyst,
+  req_options: [plug: {Req.Test, Polybot.AI.Analyst}, retry: false],
+  api_key: "test-api-key"
+
+config :polybot, Polybot.Scheduler, request_delay_ms: 0
+
 # Print only warnings and errors during test
 config :logger, level: :warning
 

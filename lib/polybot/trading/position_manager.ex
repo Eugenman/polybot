@@ -5,14 +5,8 @@ defmodule Polybot.Trading.PositionManager do
   require Logger
   import Ecto.Query
   alias Polybot.Repo
-  alias Polybot.Trading.Position
+  alias Polybot.Trading.{Pnl, Position}
   alias Polybot.Polymarket.Gamma
-
-  # close if profit >= 50%
-  @take_profit Decimal.new("0.5")
-  # close if loss <= -40%
-  @stop_loss Decimal.new("-0.4")
-  @money_scale 8
 
   def update_positions do
     positions =
@@ -48,9 +42,9 @@ defmodule Polybot.Trading.PositionManager do
   # P&L update and closing happen in a single UPDATE, so a position can't end up
   # with new P&L but a stale status (or the other way around).
   defp apply_price(position, current_price) do
-    pnl_pct = calculate_pnl(position, current_price)
-    pnl_usd = pnl_usd(position, pnl_pct)
-    close_reason = close_reason(pnl_pct)
+    pnl_pct = Pnl.pnl_pct(position.entry_price, current_price)
+    pnl_usd = Pnl.pnl_usd(position.cost, pnl_pct)
+    close_reason = Pnl.close_reason(pnl_pct)
 
     attrs = %{exit_price: current_price, pnl: pnl_usd}
     attrs = if close_reason, do: Map.put(attrs, :status, "closed"), else: attrs
@@ -67,23 +61,5 @@ defmodule Polybot.Trading.PositionManager do
       {:error, changeset} ->
         Logger.error("Failed to update position #{position.id}: #{inspect(changeset.errors)}")
     end
-  end
-
-  defp close_reason(pnl_pct) do
-    cond do
-      Decimal.compare(pnl_pct, @take_profit) != :lt -> "take_profit"
-      Decimal.compare(pnl_pct, @stop_loss) != :gt -> "stop_loss"
-      true -> nil
-    end
-  end
-
-  defp calculate_pnl(position, current_price) do
-    current_price
-    |> Decimal.sub(position.entry_price)
-    |> Decimal.div(position.entry_price)
-  end
-
-  defp pnl_usd(position, pnl_pct) do
-    position.cost |> Decimal.mult(pnl_pct) |> Decimal.round(@money_scale)
   end
 end

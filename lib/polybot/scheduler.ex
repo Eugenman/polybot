@@ -69,7 +69,8 @@ defmodule Polybot.Scheduler do
     markets
     |> Enum.take(20)
     |> Enum.map(fn market ->
-      Process.sleep(2000)
+      # Spreads Claude requests out to stay under API rate limits.
+      Process.sleep(request_delay_ms())
       analyze_market(market, cycle)
     end)
     |> Enum.reject(&is_nil/1)
@@ -96,6 +97,10 @@ defmodule Polybot.Scheduler do
       )
 
       nil
+  end
+
+  defp request_delay_ms do
+    Application.get_env(:polybot, __MODULE__, [])[:request_delay_ms] || 2000
   end
 
   defp log_decision(decision) do

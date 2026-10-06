@@ -15,13 +15,7 @@ defmodule Polybot.Polymarket.Gamma do
     min_volume = Keyword.get(opts, :min_volume, 10_000)
     limit = Keyword.get(opts, :limit, 50)
 
-    case Req.get("#{@base_url}/markets",
-           params: [
-             active: true,
-             closed: false,
-             limit: limit
-           ]
-         ) do
+    case get("/markets", params: [active: true, closed: false, limit: limit]) do
       {:ok, %{status: 200, body: markets}} when is_list(markets) ->
         filtered =
           markets
@@ -39,7 +33,7 @@ defmodule Polybot.Polymarket.Gamma do
   end
 
   def fetch_market(market_id) do
-    case Req.get("#{@base_url}/markets/#{market_id}") do
+    case get("/markets/#{market_id}") do
       {:ok, %{status: 200, body: market}} when is_map(market) ->
         {:ok, parse_market(market)}
 
@@ -95,13 +89,7 @@ defmodule Polybot.Polymarket.Gamma do
     limit = Keyword.get(opts, :limit, 200)
     min_volume = Keyword.get(opts, :min_volume, 50_000)
 
-    case Req.get("#{@base_url}/markets",
-           params: [
-             active: true,
-             closed: false,
-             limit: limit
-           ]
-         ) do
+    case get("/markets", params: [active: true, closed: false, limit: limit]) do
       {:ok, %{status: 200, body: markets}} when is_list(markets) ->
         filtered =
           markets
@@ -118,6 +106,12 @@ defmodule Polybot.Polymarket.Gamma do
       {:error, reason} ->
         {:error, reason}
     end
+  end
+
+  # Extra Req options from config, e.g. a Req.Test plug in tests.
+  defp get(path, opts \\ []) do
+    req_options = Application.get_env(:polybot, __MODULE__, [])[:req_options] || []
+    Req.get(@base_url <> path, opts ++ req_options)
   end
 
   @doc """

@@ -44,6 +44,16 @@ Keep changeset validations and DB constraints in sync; new invariants go into a 
 - Parse external numbers with `Polybot.Decimals.to_decimal/1`.
 - Compare Decimals with `Decimal.compare/2` / `Decimal.negative?/1`, never with `>=` / `<` (structs compare as terms).
 
+## Testing
+- `mix test` needs Postgres on localhost:5432 (postgres/postgres)
+- The scheduler does not start in tests (`config :polybot, start_scheduler: false`)
+- HTTP to Gamma and Claude goes through `Req.Test` stubs named after the module
+  (`Req.Test.stub(Polybot.Polymarket.Gamma, ...)`, `Req.Test.stub(Polybot.AI.Analyst, ...)`)
+- P&L math lives in the pure `Polybot.Trading.Pnl` module, test it there
+- Tests that open positions are `async: false` (advisory lock)
+- `PaperTraderConcurrencyTest` uses real connections (sandbox `:auto` mode) to test races;
+  the SQL sandbox shares one connection, so races can't be reproduced there
+
 ## Environment
 - Paper trading only, no real orders are placed
 - Run `mix precommit` before finishing changes (see AGENTS.md)
