@@ -25,8 +25,14 @@ Claude estimates only the probability that a market resolves YES. The bot comput
 - YES positions are bought and tracked at the YES price, NO positions at the NO price
 - Only markets with both prices strictly between 0 and 1 are analyzed
 - Take-profit: +50%, stop-loss: -40% per position (P&L update and close in one UPDATE)
-- One open position per market
-- Max open positions / total exposure: not enforced yet
+- One open position per market (partial unique index `positions_one_open_per_market`)
+- Max 5 open positions, max exposure 50% of capital
+- Limit checks and insert run in one transaction under `pg_advisory_xact_lock`, so concurrent
+  opens can't exceed the limits
+
+## Database invariants
+`positions` has CHECK constraints for `status`, `action`, `0 < entry_price < 1` and `cost > 0`.
+Keep changeset validations and DB constraints in sync; new invariants go into a migration too.
 
 ## Database tables
 - `decisions` — every analysis result

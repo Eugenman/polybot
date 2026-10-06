@@ -35,5 +35,13 @@ defmodule Polybot.Trading.Position do
     |> validate_inclusion(:action, ["buy_yes", "buy_no"])
     |> validate_inclusion(:status, ["open", "closed"])
     |> validate_number(:entry_price, greater_than: 0, less_than: 1)
+    |> unique_constraint(:market_id,
+      name: :positions_one_open_per_market,
+      message: "already has an open position"
+    )
+    |> check_constraint(:status, name: :positions_valid_status)
+    |> check_constraint(:action, name: :positions_valid_action)
+    |> check_constraint(:entry_price, name: :positions_entry_price_range)
+    |> check_constraint(:cost, name: :positions_cost_positive)
   end
 end

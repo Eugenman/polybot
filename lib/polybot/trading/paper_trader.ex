@@ -3,6 +3,7 @@ defmodule Polybot.Trading.PaperTrader do
   Paper trading engine. Records decisions and simulates trades without real money.
   """
   require Logger
+  import Ecto.Query
   alias Polybot.Repo
   alias Polybot.Trading.{Decision, Position}
 
@@ -10,6 +11,14 @@ defmodule Polybot.Trading.PaperTrader do
   @max_position_pct Decimal.new("0.10")
   @min_edge Decimal.new("0.10")
   @shares_scale 8
+
+  # Risk limits. With a fixed 10% position size both limits bind at 5 positions;
+  # the exposure limit still protects if position sizing becomes dynamic.
+  @max_open_positions 5
+  @max_exposure_pct Decimal.new("0.50")
+
+  # Arbitrary app-wide key for pg_advisory_xact_lock: serializes opening positions.
+  @open_position_lock 4_201_001
 
   def process_decision(decision, cycle \\ 0) do
     # Save decision to DB
@@ -47,28 +56,86 @@ defmodule Polybot.Trading.PaperTrader do
     end
   end
 
+  @doc """
+  Opens a paper position if the risk limits allow it.
+
+  Returns `{:ok, position}` or `{:error, reason}`, where reason is one of
+  `:no_valid_price`, `:already_open`, `:max_open_positions`, `:max_exposure`
+  or `{:invalid, errors}`.
+  """
   def open_position(decision) do
-    import Ecto.Query
-
-    # Check if position already open for this market
-    already_open =
-      Repo.exists?(
-        from p in Position,
-          where: p.market_id == ^decision.market_id and p.status == "open"
-      )
-
     entry_price = entry_price(decision)
 
-    cond do
-      already_open ->
-        Logger.debug("Position already open for #{decision.market_id}, skipping")
+    result =
+      if positive?(entry_price) do
+        open_position_atomically(decision, entry_price)
+      else
+        {:error, :no_valid_price}
+      end
 
-      not positive?(entry_price) ->
-        Logger.warning("No valid #{decision.action} price for #{decision.market_id}, skipping")
+    log_open_result(result, decision)
+    result
+  end
+
+  # Limit checks and the insert run in one transaction under an advisory lock, so two
+  # concurrent opens can't both see "4 of 5 positions" and both insert. The partial
+  # unique index on open positions is the last line of defense against duplicates.
+  defp open_position_atomically(decision, entry_price) do
+    position_size = Decimal.mult(@capital, @max_position_pct)
+
+    Repo.transaction(fn ->
+      Repo.query!("SELECT pg_advisory_xact_lock($1)", [@open_position_lock])
+
+      with :ok <- check_limits(decision.market_id, position_size),
+           {:ok, position} <- insert_position(decision, entry_price, position_size) do
+        position
+      else
+        {:error, reason} -> Repo.rollback(reason)
+      end
+    end)
+  end
+
+  defp check_limits(market_id, position_size) do
+    open = from(p in Position, where: p.status == "open")
+    exposure = Repo.aggregate(open, :sum, :cost) || Decimal.new(0)
+    max_exposure = Decimal.mult(@capital, @max_exposure_pct)
+
+    cond do
+      Repo.exists?(where(open, [p], p.market_id == ^market_id)) ->
+        {:error, :already_open}
+
+      Repo.aggregate(open, :count) >= @max_open_positions ->
+        {:error, :max_open_positions}
+
+      Decimal.compare(Decimal.add(exposure, position_size), max_exposure) == :gt ->
+        {:error, :max_exposure}
 
       true ->
-        insert_position(decision, entry_price)
+        :ok
     end
+  end
+
+  defp log_open_result({:ok, p}, _decision) do
+    Logger.info(
+      "📝 Paper position opened: #{p.action} #{p.market_id} @ #{p.entry_price}, cost: $#{p.cost}"
+    )
+  end
+
+  defp log_open_result({:error, :already_open}, decision) do
+    Logger.debug("Position already open for #{decision.market_id}, skipping")
+  end
+
+  defp log_open_result({:error, reason}, decision)
+       when reason in [:max_open_positions, :max_exposure] do
+    Logger.info("Risk limit #{reason} reached, not opening #{decision.market_id}")
+  end
+
+  defp log_open_result({:error, :no_valid_price}, decision) do
+    Logger.warning("No valid #{decision.action} price for #{decision.market_id}, skipping")
+  end
+
+  defp log_open_result({:error, reason}, decision) do
+    Logger.error("Failed to open position for #{decision.market_id}: #{inspect(reason)}")
   end
 
   # A YES position is bought at the YES price, a NO position at the NO price.
@@ -79,8 +146,7 @@ defmodule Polybot.Trading.PaperTrader do
   defp positive?(%Decimal{} = price), do: Decimal.positive?(price)
   defp positive?(_), do: false
 
-  defp insert_position(decision, entry_price) do
-    position_size = Decimal.mult(@capital, @max_position_pct)
+  defp insert_position(decision, entry_price, position_size) do
     shares = position_size |> Decimal.div(entry_price) |> Decimal.round(@shares_scale)
 
     %Position{}
@@ -96,24 +162,22 @@ defmodule Polybot.Trading.PaperTrader do
     })
     |> Repo.insert()
     |> case do
-      {:ok, p} ->
-        Logger.info(
-          "📝 Paper position opened: #{p.action} #{p.market_id} @ #{p.entry_price}, cost: $#{p.cost}"
-        )
+      {:ok, position} ->
+        {:ok, position}
 
       {:error, changeset} ->
-        Logger.error("Failed to open position: #{inspect(changeset.errors)}")
+        case changeset.errors[:market_id] do
+          {_message, [constraint: :unique, constraint_name: _]} -> {:error, :already_open}
+          _ -> {:error, {:invalid, changeset.errors}}
+        end
     end
   end
 
   def get_open_positions do
-    import Ecto.Query
     Repo.all(from p in Position, where: p.status == "open" and p.paper == true)
   end
 
   def get_stats do
-    import Ecto.Query
-
     total_decisions = Repo.aggregate(Decision, :count, :id)
     buy_decisions = Repo.aggregate(from(d in Decision, where: d.action != "pass"), :count, :id)
     open_positions = Repo.aggregate(from(p in Position, where: p.status == "open"), :count, :id)
